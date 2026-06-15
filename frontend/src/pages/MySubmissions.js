@@ -1,6 +1,7 @@
+// frontend/src/pages/MySubmissions.js
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import api, { getAuthConfig } from '../api';
+import api from '../api'; // Removed getAuthConfig
 
 const statusConfig = {
   approved: { label: 'Approved', className: 'badge badge--success', icon: '✅' },
@@ -14,7 +15,8 @@ const MySubmissions = () => {
   const [filter, setFilter] = useState('all');
 
   useEffect(() => {
-    api.get('/faq/my-submissions', getAuthConfig())
+    // Removed getAuthConfig(), the API client handles it now!
+    api.get('/faq/my-submissions')
       .then(res => setFaqs(res.data))
       .catch(console.error)
       .finally(() => setLoading(false));

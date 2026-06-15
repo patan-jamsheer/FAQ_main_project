@@ -1,234 +1,126 @@
+// frontend/src/pages/AIChat.js
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import api, { getAuthConfig } from '../api';
+import api from '../api';
+import { useAuth } from '../context/AuthContext';
 
-const AIChat = ({ user }) => {
-  const [searchParams] = useSearchParams();
-  const initialQ = searchParams.get('q') || '';
-
-  const [messages, setMessages] = useState([
-    {
-      role: 'assistant',
-      content: `Hi ${user?.name?.split(' ')[0] || 'there'}! 👋 I'm your support assistant.\n\n• I search approved FAQs first\n• Then I help with any online platform problem\n\nWhat's troubling you today?`
-    }
-  ]);
-  const [input, setInput] = useState(initialQ);
+const AIChat = () => {
+  const { user } = useAuth();
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [usage, setUsage] = useState(null);
-  const [relatedFaqs, setRelatedFaqs] = useState([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [faqForm, setFaqForm] = useState({ question: '', answer: '', isAnonymous: false });
-  const [modalMessage, setModalMessage] = useState('');
-  const [modalLoading, setModalLoading] = useState(false);
-  const messagesEndRef = useRef(null);
-  const sentInitial = useRef(false);
+  const [usage, setUsage] = useState({ remaining: null, limit: null });
+  const bottomRef = useRef(null);
 
   useEffect(() => {
-    api.get('/faq/chat/usage', getAuthConfig())
-      .then(res => setUsage(res.data))
-      .catch(() => {});
+    // Fetch remaining usage limits
+    api.get('/faq/chat/usage').then(res => setUsage(res.data)).catch(console.error);
+    
+    // Initial greeting
+    setMessages([{ role: 'assistant', content: `Hi ${user?.name?.split(' ')[0] || 'there'}! I'm your AI Support Tutor. Ask me anything about the platform or your courses!` }]);
+  }, [user]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+  const handleSend = async (e) => {
+    e.preventDefault();
+    if (!input.trim() || usage.remaining === 0) return;
 
-  useEffect(() => {
-    if (initialQ && !sentInitial.current) {
-      sentInitial.current = true;
-      const fakeEvent = { preventDefault: () => {} };
-      setInput(initialQ);
-      setTimeout(() => sendMessage(initialQ, fakeEvent), 400);
-    }
-  }, [initialQ]);
-
-  const sendMessage = async (text, e) => {
-    if (e?.preventDefault) e.preventDefault();
-    const msg = (text || input).trim();
-    if (!msg || loading) return;
-
-    const userMessage = { role: 'user', content: msg };
-    setMessages(prev => [...prev, userMessage]);
+    const userMessage = { role: 'user', content: input };
+    const chatHistory = [...messages, userMessage];
+    
+    setMessages(chatHistory);
     setInput('');
     setLoading(true);
-    setRelatedFaqs([]);
 
     try {
-      const res = await api.post('/faq/chat', {
-        message: msg,
-        history: messages.slice(1)
-      }, getAuthConfig());
+      // Smart API call
+      const res = await api.post('/faq/chat', { 
+        message: userMessage.content, 
+        history: messages.slice(-6) 
+      });
 
-      setMessages(prev => [...prev, { role: 'assistant', content: res.data.text }]);
-      if (res.data.relatedFaqs?.length) setRelatedFaqs(res.data.relatedFaqs);
-      if (res.data.remaining !== undefined) {
-        setUsage({
-          used: res.data.limit - res.data.remaining,
-          remaining: res.data.remaining,
-          limit: res.data.limit
-        });
-      }
+      setMessages([...chatHistory, { role: 'assistant', content: res.data.text, relatedFaqs: res.data.relatedFaqs }]);
+      setUsage({ remaining: res.data.remaining, limit: res.data.limit });
     } catch (err) {
-      const msgText = err.response?.status === 429
-        ? err.response.data.message
-        : 'Sorry, something went wrong. Try again or browse FAQs on Home.';
-      setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${msgText}` }]);
+      setMessages([...chatHistory, { 
+        role: 'assistant', 
+        content: err.response?.data?.message || 'Sorry, I am having trouble connecting to the server right now.' 
+      }]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
-
-  const openSaveModal = (questionText, answerText) => {
-    setFaqForm({ question: questionText, answer: answerText, isAnonymous: false });
-    setModalMessage('');
-    setIsModalOpen(true);
-  };
-
-  const handleSaveFAQ = async (e) => {
-    e.preventDefault();
-    setModalLoading(true);
-    try {
-      await api.post('/faq/add', { ...faqForm, source: 'ai' }, getAuthConfig());
-      setModalMessage('✅ Submitted for admin approval. Once approved, all students can use it!');
-      setTimeout(() => setIsModalOpen(false), 2200);
-    } catch (err) {
-      if (err.response?.status === 409) {
-        setModalMessage('⚠️ Similar FAQ exists. Search the library first.');
-      } else {
-        setModalMessage('❌ Could not save. Try again.');
-      }
-    }
-    setModalLoading(false);
   };
 
   return (
-    <div className="page chat-page">
-      <div className="chat-layout">
-        <aside className="chat-sidebar">
-          <h3>💡 Tips</h3>
-          <ul>
-            <li>Be specific about your error or page</li>
-            <li>Check related FAQs below AI replies</li>
-            <li>Save good answers to help 10k+ students</li>
-          </ul>
-          {usage && (
-            <div className="usage-box">
-              <p>AI quota today</p>
-              <div className="usage-bar">
-                <div
-                  className="usage-bar__fill"
-                  style={{ width: `${Math.min(100, (usage.used / usage.limit) * 100)}%` }}
-                />
-              </div>
-              <small>{usage.remaining} of {usage.limit} left</small>
-            </div>
-          )}
-          <Link to="/" className="btn-secondary" style={{ width: '100%', textAlign: 'center', marginTop: '16px' }}>
-            ← Browse FAQs first
-          </Link>
-        </aside>
+    <div className="page page--narrow">
+      <header className="dash-header">
+        <div>
+          <h1>💬 AI Tutor</h1>
+          <p>
+            {usage.remaining !== null 
+              ? `You have ${usage.remaining} of ${usage.limit} daily messages remaining.` 
+              : 'Connecting to AI...'}
+          </p>
+        </div>
+      </header>
 
-        <div className="chat-panel">
-          <div className="chat-panel__header">
-            <div className="chat-panel__title">
-              <span className="chat-avatar">🤖</span>
-              <div>
-                <h2>AI Support</h2>
-                <span className="chat-status">Online · FAQ-aware</span>
+      <div className="auth-card" style={{ padding: 0, height: '60vh', display: 'flex', flexDirection: 'column', maxWidth: '100%', margin: 0 }}>
+        
+        {/* Chat Log */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {messages.map((msg, i) => (
+            <div key={i} style={{ alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+              <div style={{
+                background: msg.role === 'user' ? 'var(--primary)' : 'var(--surface-hover)',
+                color: msg.role === 'user' ? '#fff' : 'var(--text-main)',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                borderBottomRightRadius: msg.role === 'user' ? '4px' : '12px',
+                borderBottomLeftRadius: msg.role === 'assistant' ? '4px' : '12px',
+                lineHeight: 1.5,
+                whiteSpace: 'pre-wrap'
+              }}>
+                {msg.content}
               </div>
-            </div>
-          </div>
-
-          <div className="chat-messages">
-            {messages.map((msg, index) => {
-              const isUser = msg.role === 'user';
-              return (
-                <div key={index} className={`chat-bubble-row ${isUser ? 'chat-bubble-row--user' : ''}`}>
-                  {!isUser && <span className="chat-mini-avatar">🤖</span>}
-                  <div className="chat-bubble-wrap">
-                    <div className={`chat-bubble ${isUser ? 'chat-bubble--user' : 'chat-bubble--bot'}`}>
-                      <p>{msg.content}</p>
-                    </div>
-                    {!isUser && index > 0 && (
-                      <button
-                        type="button"
-                        className="save-faq-link"
-                        onClick={() => {
-                          const prev = messages[index - 1];
-                          openSaveModal(prev?.content || 'Student question', msg.content);
-                        }}
-                      >
-                        💾 Save to FAQ library
-                      </button>
-                    )}
-                  </div>
-                  {isUser && (
-                    <span className="chat-mini-avatar chat-mini-avatar--user">
-                      {user?.name?.charAt(0).toUpperCase() || 'U'}
-                    </span>
-                  )}
+              
+              {/* Display Contextual FAQs if returned by the AI Service */}
+              {msg.relatedFaqs && msg.relatedFaqs.length > 0 && (
+                <div style={{ marginTop: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  <strong>Suggested reading:</strong>
+                  <ul style={{ margin: '4px 0 0 16px' }}>
+                    {msg.relatedFaqs.map(f => (
+                      <li key={f._id}>{f.question}</li>
+                    ))}
+                  </ul>
                 </div>
-              );
-            })}
-            {loading && (
-              <div className="chat-bubble-row">
-                <span className="chat-mini-avatar">🤖</span>
-                <div className="typing-indicator"><span /><span /><span /></div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-
-          {relatedFaqs.length > 0 && (
-            <div className="related-faqs">
-              <p>Related from FAQ library:</p>
-              {relatedFaqs.map(f => (
-                <Link key={f._id} to={`/?q=${encodeURIComponent(f.question)}`} className="related-faq-chip">
-                  {f.question}
-                </Link>
-              ))}
+              )}
             </div>
+          ))}
+          {loading && (
+             <div style={{ alignSelf: 'flex-start', background: 'var(--surface-hover)', padding: '12px 16px', borderRadius: '12px' }}>
+               Typing...
+             </div>
           )}
-
-          <form className="chat-input-bar" onSubmit={e => sendMessage(null, e)}>
-            <input
-              className="chat-input"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              placeholder="Describe your problem..."
-              disabled={loading}
-            />
-            <button type="submit" className="btn-primary" disabled={loading || !input.trim()}>
-              {loading ? '...' : 'Send'}
-            </button>
-          </form>
+          <div ref={bottomRef} />
         </div>
+
+        {/* Chat Input */}
+        <form onSubmit={handleSend} style={{ padding: '1rem', borderTop: '1px solid var(--border)', display: 'flex', gap: '8px' }}>
+          <input
+            className="input-field"
+            style={{ margin: 0, flex: 1 }}
+            placeholder="Type your question..."
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            disabled={loading || usage.remaining === 0}
+          />
+          <button type="submit" className="btn-primary" disabled={loading || !input.trim() || usage.remaining === 0}>
+            Send
+          </button>
+        </form>
       </div>
-
-      {isModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
-          <div className="modal-card" onClick={e => e.stopPropagation()}>
-            <h3>Save solution for everyone</h3>
-            <p className="text-muted">Admin will review before it goes public.</p>
-            {modalMessage && <p className={`alert ${modalMessage.startsWith('✅') ? 'alert--success' : 'alert--warn'}`}>{modalMessage}</p>}
-            <form onSubmit={handleSaveFAQ}>
-              <label className="label">Question</label>
-              <input className="input-field" value={faqForm.question} onChange={e => setFaqForm({ ...faqForm, question: e.target.value })} required />
-              <label className="label">Answer</label>
-              <textarea className="input-field textarea" value={faqForm.answer} onChange={e => setFaqForm({ ...faqForm, answer: e.target.value })} required />
-              <label className="checkbox-row">
-                <input type="checkbox" checked={faqForm.isAnonymous} onChange={e => setFaqForm({ ...faqForm, isAnonymous: e.target.checked })} />
-                Submit anonymously
-              </label>
-              <div className="modal-actions">
-                <button type="button" className="btn-ghost" onClick={() => setIsModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn-primary" disabled={modalLoading}>
-                  {modalLoading ? 'Saving...' : 'Submit for approval'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

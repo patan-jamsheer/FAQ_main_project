@@ -1,60 +1,79 @@
+// backend/index.js
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const passport = require('passport');
-require('dotenv').config();
+
+// 1. Import our new centralized config
+const config = require('./config/env'); 
 require('./config/passport');
 
 const authRoutes = require('./routes/auth');
 const faqRoutes = require('./routes/faq');
-const FAQ = require('./models/FAQ');
+
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 
-const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:3000')
-  .split(',')
-  .map(s => s.trim());
+const allowedOrigins = config.clientUrl.split(',').map(s => s.trim());
 
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) callback(null, true);
-    else callback(null, allowedOrigins[0]);
+    else callback(new Error('Not allowed by CORS'));
   },
   credentials: true
 }));
-app.use(express.json());
+
+app.use(express.json()); 
+
+// --- NEW SECURITY MIDDLEWARES ---
+
+// 1. Helmet: Hides Express from hackers and secures HTTP headers
+app.use(helmet());
+
+// 2. Global Rate Limiter: Prevent DDoS attacks
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  
+  // Keep it strict (100) for production, but give yourself 5,000 requests for local testing!
+  max: config.nodeEnv === 'development' ? 5000 : 100, 
+  
+  message: { message: 'Too many requests from this IP, please try again after 15 minutes.' },
+  standardHeaders: true, 
+  legacyHeaders: false,
+});
+
+// Apply the rate limiter to all routes
+app.use(globalLimiter);
+
+// 3. Strict Rate Limiter for AI Chat & Adding FAQs
+const strictLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  
+  // Relax the strict limit during development as well
+  max: config.nodeEnv === 'development' ? 500 : 10, 
+  
+  message: { message: 'Please slow down your requests.' }
+});
+// Apply strict limits to specific routes *before* they hit the router
+app.use('/faq/chat', strictLimiter);
+app.use('/faq/add', strictLimiter);
+
+// --- END SECURITY MIDDLEWARES ---
 app.use(passport.initialize());
 
-async function runMigrations() {
-  await FAQ.updateMany(
-    { status: { $exists: false }, isApproved: true },
-    { $set: { status: 'approved' } }
-  );
-  await FAQ.updateMany(
-    { status: { $exists: false }, isApproved: false },
-    { $set: { status: 'pending' } }
-  );
-  await FAQ.updateMany(
-    { isApproved: { $exists: false } },
-    { $set: { isApproved: true, status: 'approved' } }
-  );
-  try {
-    await FAQ.collection.createIndex({ question: 'text', answer: 'text' });
-  } catch (e) {
-    if (e.code !== 85 && e.code !== 86) console.warn('Text index:', e.message);
-  }
-}
+// Note: Removed the runMigrations() function from startup. 
+// Migrations should be handled by a script, not on every server boot.
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(async () => {
-    console.log('MongoDB connected');
-    await runMigrations();
-
-    const PORT = process.env.PORT || 5000;
-    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+mongoose.connect(config.mongoUri)
+  .then(() => {
+    console.log('✅ MongoDB connected');
+    app.listen(config.port, () => console.log(`🚀 Server running on port ${config.port}`));
   })
   .catch(err => {
-    console.error('MongoDB connection failed:', err);
+    console.error('❌ MongoDB connection failed:', err);
     process.exit(1);
   });
 
@@ -62,3 +81,12 @@ app.use('/auth', authRoutes);
 app.use('/faq', faqRoutes);
 
 app.get('/', (req, res) => res.send('FAQ Support Platform API'));
+
+// 2. Add a Global Error Handler
+app.use((err, req, res, next) => {
+  console.error(err.stack); // Logs the actual error in your terminal
+  res.status(500).json({ 
+    message: 'Something went wrong!', 
+    error: config.nodeEnv === 'development' ? err.message : undefined // Hides details from users in production
+  });
+});

@@ -1,6 +1,6 @@
+// frontend/src/App.js
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import api from './api';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import Login from './pages/Login';
@@ -12,38 +12,17 @@ import PrivateRoute from './components/PrivateRoute';
 import AuthSuccess from './pages/AuthSuccess';
 import AIChat from './pages/AIChat';
 
-function App() {
-  const [user, setUser] = useState(null);
+// Import our new Context tools
+import { AuthProvider, useAuth } from './context/AuthContext';
+
+function AppRoutes() {
+  const { loading } = useAuth(); // Grab loading state from the cloud
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
-  const [loading, setLoading] = useState(!!localStorage.getItem('token'));
 
   useEffect(() => {
     document.documentElement.className = theme;
     localStorage.setItem('theme', theme);
   }, [theme]);
-
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      api.get('/auth/current-user', { headers: { Authorization: `Bearer ${token}` } })
-        .then(res => {
-          setUser(res.data);
-          setLoading(false);
-        })
-        .catch(() => {
-          localStorage.removeItem('token');
-          setLoading(false);
-        });
-    } else {
-      setLoading(false);
-    }
-  }, []);
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    setUser(null);
-    window.location.href = '/';
-  };
 
   if (loading) {
     return (
@@ -54,22 +33,32 @@ function App() {
     );
   }
 
+  // Look at how clean the Routes are now! No more user={user} props!
   return (
     <Router>
-      <Navbar user={user} onLogout={handleLogout} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} />
+      <Navbar theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} />
       <main className="app-main">
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
-          <Route path="/auth/success" element={<AuthSuccess setUser={setUser} />} />
-          <Route path="/dashboard" element={<PrivateRoute user={user}><Dashboard user={user} /></PrivateRoute>} />
-          <Route path="/add-faq" element={<PrivateRoute user={user}><AddFAQ user={user} /></PrivateRoute>} />
-          <Route path="/my-submissions" element={<PrivateRoute user={user}><MySubmissions /></PrivateRoute>} />
-          <Route path="/admin" element={<PrivateRoute user={user}><AdminPanel user={user} /></PrivateRoute>} />
-          <Route path="/chat" element={<PrivateRoute user={user}><AIChat user={user} /></PrivateRoute>} />
+          <Route path="/auth/success" element={<AuthSuccess />} />
+          <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+          <Route path="/add-faq" element={<PrivateRoute><AddFAQ /></PrivateRoute>} />
+          <Route path="/my-submissions" element={<PrivateRoute><MySubmissions /></PrivateRoute>} />
+          <Route path="/admin" element={<PrivateRoute><AdminPanel /></PrivateRoute>} />
+          <Route path="/chat" element={<PrivateRoute><AIChat /></PrivateRoute>} />
         </Routes>
       </main>
     </Router>
+  );
+}
+
+// Wrap everything in the AuthProvider so all components can access the data
+function App() {
+  return (
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
   );
 }
 

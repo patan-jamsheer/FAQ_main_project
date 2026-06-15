@@ -1,7 +1,9 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
-const Navbar = ({ user, onLogout, theme, onToggleTheme }) => {
+const Navbar = ({ theme, onToggleTheme }) => {
+  const { user, logout } = useAuth(); 
   const location = useLocation();
   const isActive = (path) => location.pathname === path;
 
@@ -27,7 +29,7 @@ const Navbar = ({ user, onLogout, theme, onToggleTheme }) => {
                 Admin
               </Link>
             )}
-            <button type="button" className="nav-link nav-link--btn" onClick={onLogout}>Logout</button>
+            <button type="button" className="nav-link nav-link--btn" onClick={logout}>Logout</button>
             <div className="navbar__avatar" title={user.name}>{user.name?.charAt(0).toUpperCase()}</div>
           </>
         ) : (

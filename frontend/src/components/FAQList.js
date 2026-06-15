@@ -1,6 +1,8 @@
+// frontend/src/components/FAQList.js
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import api, { getAuthConfig } from '../api';
+import api from '../api'; // 1. Removed getAuthConfig()
+import { useAuth } from '../context/AuthContext'; // 2. Import the Cloud!
 
 const FAQList = ({
   faqs,
@@ -11,12 +13,12 @@ const FAQList = ({
   onUpvote,
   compact = false
 }) => {
+  const { user } = useAuth(); // 3. Grab user directly from the Context Cloud
+  
   const [openId, setOpenId] = useState(null);
   const [reportingId, setReportingId] = useState(null);
   const [reportReason, setReportReason] = useState('');
   const [reportMsg, setReportMsg] = useState('');
-
-  const token = localStorage.getItem('token');
 
   const highlightText = (text, word) => {
     if (!word?.trim()) return text;
@@ -32,12 +34,13 @@ const FAQList = ({
   };
 
   const handleUpvote = async (faqId) => {
-    if (!token) {
+    if (!user) {
       alert('Please log in to upvote.');
       return;
     }
     try {
-      await api.post(`/faq/${faqId}/upvote`, {}, getAuthConfig());
+      // 4. Smart API interceptor automatically attaches the token!
+      await api.post(`/faq/${faqId}/upvote`);
       onUpvote?.();
     } catch (e) {
       console.error(e);
@@ -45,9 +48,10 @@ const FAQList = ({
   };
 
   const handleReport = async (faqId) => {
-    if (!token) return;
+    if (!user) return;
     try {
-      await api.post(`/faq/${faqId}/report`, { reason: reportReason || 'Incorrect or unhelpful' }, getAuthConfig());
+      // Smart API handles the token here too
+      await api.post(`/faq/${faqId}/report`, { reason: reportReason || 'Incorrect or unhelpful' });
       setReportMsg('Report submitted. Thank you.');
       setTimeout(() => {
         setReportingId(null);
@@ -80,13 +84,10 @@ const FAQList = ({
     <div className={`faq-list ${compact ? 'faq-list--compact' : ''}`}>
       {faqs.map(faq => {
         const isOpen = openId === faq._id;
-        let upvoted = false;
-        if (token) {
-          try {
-            const payload = JSON.parse(atob(token.split('.')[1]));
-            upvoted = faq.upvotes?.includes(payload.id);
-          } catch (_) {}
-        }
+        
+        // 5. Look how much easier this is! We just check the cloud user ID 
+        // against the upvotes array. No more decoding base64 tokens!
+        const upvoted = user && faq.upvotes?.includes(user.id);
 
         return (
           <article
@@ -128,7 +129,7 @@ const FAQList = ({
                   <span>{new Date(faq.createdAt).toLocaleDateString()}</span>
                   {faq.viewCount > 0 && <span>{faq.viewCount} views</span>}
                 </div>
-                {showReport && token && (
+                {showReport && user && (
                   <div className="faq-card__actions">
                     {reportingId === faq._id ? (
                       <div className="report-box">

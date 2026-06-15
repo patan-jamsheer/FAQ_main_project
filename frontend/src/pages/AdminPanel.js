@@ -1,7 +1,11 @@
+// frontend/src/pages/AdminPanel.js
 import React, { useState, useEffect, useCallback } from 'react';
-import api, { getAuthConfig } from '../api';
+import api from '../api'; // Notice we removed getAuthConfig, the smart interceptor handles it!
+import { useAuth } from '../context/AuthContext'; // 1. Import our Context Cloud
 
-const AdminPanel = ({ user }) => {
+const AdminPanel = () => { // 2. Remove the { user } prop!
+  const { user } = useAuth(); // 3. Grab the user directly from the cloud
+  
   const [faqs, setFaqs] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [editId, setEditId] = useState(null);
@@ -13,9 +17,10 @@ const AdminPanel = ({ user }) => {
 
   const fetchAll = useCallback(async () => {
     try {
+      // 4. Removed getAuthConfig() from all API calls below
       const [faqRes, analyticsRes] = await Promise.all([
-        api.get('/faq/admin/all', getAuthConfig()),
-        api.get('/faq/admin/analytics', getAuthConfig())
+        api.get('/faq/admin/all'),
+        api.get('/faq/admin/analytics')
       ]);
       setFaqs(faqRes.data);
       setAnalytics(analyticsRes.data);
@@ -30,7 +35,7 @@ const AdminPanel = ({ user }) => {
 
   const handleApprove = async (id) => {
     try {
-      await api.post(`/faq/${id}/approve`, {}, getAuthConfig());
+      await api.post(`/faq/${id}/approve`, {});
       setMessage('✅ Approved & published');
       fetchAll();
     } catch {
@@ -40,7 +45,7 @@ const AdminPanel = ({ user }) => {
 
   const handleReject = async (id) => {
     try {
-      await api.post(`/faq/${id}/reject`, { reason: rejectReason }, getAuthConfig());
+      await api.post(`/faq/${id}/reject`, { reason: rejectReason });
       setMessage('FAQ rejected');
       setRejectId(null);
       setRejectReason('');
@@ -53,7 +58,7 @@ const AdminPanel = ({ user }) => {
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this FAQ permanently?')) return;
     try {
-      await api.delete(`/faq/${id}`, getAuthConfig());
+      await api.delete(`/faq/${id}`);
       setMessage('Deleted');
       fetchAll();
     } catch {
@@ -63,7 +68,7 @@ const AdminPanel = ({ user }) => {
 
   const handleUpdate = async (id) => {
     try {
-      await api.put(`/faq/${id}`, editData, getAuthConfig());
+      await api.put(`/faq/${id}`, editData);
       setEditId(null);
       setMessage('✅ Updated');
       fetchAll();

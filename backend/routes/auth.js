@@ -2,6 +2,7 @@ const express = require('express');
 const passport = require('passport');
 const jwt = require('jsonwebtoken');
 const router = express.Router();
+const config = require('../config/env');
 
 const clientUrl = (process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim();
 
@@ -11,6 +12,7 @@ router.get('/google', passport.authenticate('google', {
 }));
 
 // Local Development Bypass login (instant admin login)
+if (config.nodeEnv === 'development') {
 router.get('/bypass', async (req, res) => {
   try {
     const User = require('../models/User');
@@ -57,6 +59,7 @@ router.get('/bypass-student', async (req, res) => {
     res.status(500).json({ error: 'Bypass login failed', details: err.message });
   }
 });
+}
 
 // Google callback — issue JWT
 router.get('/google/callback', passport.authenticate('google', {

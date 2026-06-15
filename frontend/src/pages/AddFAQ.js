@@ -1,118 +1,102 @@
+// frontend/src/pages/AddFAQ.js
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import api, { getAuthConfig } from '../api';
+import { useNavigate } from 'react-router-dom';
+import api from '../api';
+import { useAuth } from '../context/AuthContext';
 
-const AddFAQ = ({ user }) => {
-  const [question, setQuestion] = useState('');
-  const [answer, setAnswer] = useState('');
-  const [isAnonymous, setIsAnonymous] = useState(false);
-  const [message, setMessage] = useState('');
-  const [isError, setIsError] = useState(false);
+const AddFAQ = () => {
+  const { user } = useAuth(); // Grab user from Context
+  const navigate = useNavigate();
+  
+  const [formData, setFormData] = useState({ question: '', answer: '' });
   const [loading, setLoading] = useState(false);
-  const [similar, setSimilar] = useState([]);
-  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState('');
+  const [duplicateWarning, setDuplicateWarning] = useState(null);
 
-  const checkDuplicate = async () => {
-    if (question.trim().length < 8) return;
-    setChecking(true);
+  const checkDuplicates = async () => {
+    if (!formData.question.trim() || formData.question.length < 10) return;
     try {
-      const res = await api.post('/faq/check-duplicate', { question }, getAuthConfig());
-      setSimilar(res.data.similar || []);
-    } catch {
-      setSimilar([]);
+      // Smart API call
+      const res = await api.post('/faq/check-duplicate', { question: formData.question });
+      if (res.data.hasDuplicate) {
+        setDuplicateWarning(res.data.similar);
+      } else {
+        setDuplicateWarning(null);
+      }
+    } catch (err) {
+      console.error('Duplicate check failed');
     }
-    setChecking(false);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
     setLoading(true);
-    setMessage('');
-    setIsError(false);
 
     try {
-      await api.post('/faq/add', { question, answer, isAnonymous }, getAuthConfig());
-      setMessage(
-        user?.role === 'admin'
-          ? '✅ Published! All students can see this FAQ now.'
-          : '✅ Submitted! Admin will approve before it appears in the library.'
-      );
-      setQuestion('');
-      setAnswer('');
-      setSimilar([]);
-      setIsAnonymous(false);
+      // Smart API call
+      await api.post('/faq/add', formData);
+      navigate('/my-submissions'); // Send them to see their new submission!
     } catch (err) {
-      setIsError(true);
-      if (err.response?.status === 409) {
-        setSimilar(err.response.data.similar || []);
-        setMessage('⚠️ Very similar FAQ already exists. Consider upvoting the existing one.');
-      } else {
-        setMessage('❌ Could not submit. Check connection and try again.');
-      }
+      setError(err.response?.data?.message || 'Failed to submit FAQ.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
     <div className="page page--narrow">
-      <div className="form-card hover-lift">
-        <h1>➕ Share a solution</h1>
-        <p className="text-muted">
-          Help fellow students. {user?.role !== 'admin' && 'Your FAQ stays hidden until admin approves.'}
-        </p>
+      <header className="dash-header">
+        <div>
+          <h1>📝 Submit a new FAQ</h1>
+          <p>Help your fellow students by documenting a solution.</p>
+        </div>
+      </header>
 
-        {message && (
-          <div className={`alert ${isError ? 'alert--warn' : 'alert--success'}`}>{message}</div>
-        )}
+      {error && <div className="alert alert--danger">{error}</div>}
 
-        {similar.length > 0 && (
-          <div className="similar-box">
-            <p><strong>Similar existing FAQs:</strong></p>
-            <ul>
-              {similar.map(s => (
-                <li key={s._id}>
-                  <Link to={`/?q=${encodeURIComponent(s.question)}`}>{s.question}</Link>
-                </li>
+      <form className="auth-card" onSubmit={handleSubmit} style={{ margin: 0, width: '100%', maxWidth: '100%' }}>
+        <div className="input-group">
+          <label>Question / Problem</label>
+          <input
+            className="input-field"
+            placeholder="e.g. How do I fix the MongoDB connection error?"
+            value={formData.question}
+            onChange={(e) => setFormData({ ...formData, question: e.target.value })}
+            onBlur={checkDuplicates}
+            required
+            minLength={10}
+          />
+        </div>
+
+        {duplicateWarning && (
+          <div className="alert alert--warn">
+            <strong>⚠️ Similar FAQs found:</strong>
+            <ul style={{ margin: '8px 0 0 16px', fontSize: '0.9rem' }}>
+              {duplicateWarning.slice(0, 2).map((faq, i) => (
+                <li key={i}>{faq.question}</li>
               ))}
             </ul>
+            <p style={{ margin: '8px 0 0', fontSize: '0.85rem' }}>Make sure your question isn't already answered before submitting!</p>
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
-          <label className="label">Problem / Question</label>
-          <input
-            className="input-field"
-            value={question}
-            onChange={e => setQuestion(e.target.value)}
-            onBlur={checkDuplicate}
-            placeholder="e.g. Cannot submit assignment on portal"
-            required
-          />
-          {checking && <small className="text-muted">Checking duplicates...</small>}
-
-          <label className="label">Step-by-step solution</label>
+        <div className="input-group" style={{ marginTop: '1rem' }}>
+          <label>Answer / Solution</label>
           <textarea
             className="input-field textarea"
-            value={answer}
-            onChange={e => setAnswer(e.target.value)}
-            placeholder="Write clear steps so others can follow..."
+            placeholder="Explain the step-by-step solution here..."
+            value={formData.answer}
+            onChange={(e) => setFormData({ ...formData, answer: e.target.value })}
             required
+            rows={6}
           />
+        </div>
 
-          <label className="checkbox-row">
-            <input type="checkbox" checked={isAnonymous} onChange={e => setIsAnonymous(e.target.checked)} />
-            🕵️ Hide my name (anonymous)
-          </label>
-
-          <button type="submit" className="btn-primary btn-block" disabled={loading}>
-            {loading ? 'Submitting...' : user?.role === 'admin' ? 'Publish FAQ' : 'Submit for approval'}
-          </button>
-        </form>
-
-        <p style={{ marginTop: '20px', textAlign: 'center' }}>
-          <Link to="/my-submissions" className="link-muted">View my submissions →</Link>
-        </p>
-      </div>
+        <button type="submit" className="btn-primary" style={{ marginTop: '1.5rem', width: '100%' }} disabled={loading}>
+          {loading ? 'Submitting...' : (user?.role === 'admin' ? 'Publish Directly' : 'Submit for Approval')}
+        </button>
+      </form>
     </div>
   );
 };
