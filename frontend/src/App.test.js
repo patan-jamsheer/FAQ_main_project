@@ -1,8 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
-test('renders FAQ App navbar title', () => {
+test('renders Support Hub navbar brand', () => {
   render(<App />);
-  const titleElement = screen.getByText(/FAQ App/i);
+  const titleElement = screen.getByText(/SupportHub/i);
   expect(titleElement).toBeInTheDocument();
 });

@@ -61,6 +61,15 @@ const strictLimiter = rateLimit({
 app.use('/faq/chat', strictLimiter);
 app.use('/faq/add', strictLimiter);
 
+// 4. View-Count Limiter: Prevent view inflation from scripts
+// Allows max 30 view increments per IP per minute
+const viewLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: config.nodeEnv === 'development' ? 500 : 30,
+  message: { message: 'Too many view requests. Please slow down.' }
+});
+app.use('/faq/:id/view', viewLimiter);
+
 // --- END SECURITY MIDDLEWARES ---
 app.use(passport.initialize());
 

@@ -47,6 +47,29 @@ ${contextBlock}
     );
   }
 
+  // Helper to sanitize history for Gemini schema rules (alternating roles, starting with user, ending with model)
+  const sanitizeHistory = (historyArray) => {
+    const clean = [];
+    for (const msg of historyArray) {
+      if (!msg.parts?.[0]?.text) continue;
+      if (clean.length > 0 && clean[clean.length - 1].role === msg.role) {
+        // Merge consecutive identical roles to preserve content while respecting schema
+        clean[clean.length - 1].parts[0].text += '\n' + msg.parts[0].text;
+      } else {
+        clean.push({ role: msg.role, parts: [{ text: msg.parts[0].text }] });
+      }
+    }
+    while (clean.length > 0 && clean[0].role !== 'user') {
+      clean.shift();
+    }
+    while (clean.length > 0 && clean[clean.length - 1].role !== 'model') {
+      clean.pop();
+    }
+    return clean;
+  };
+
+  formattedHistory = sanitizeHistory(formattedHistory);
+
   const chat = model.startChat({
     history: formattedHistory,
     generationConfig: { maxOutputTokens: 1200 }

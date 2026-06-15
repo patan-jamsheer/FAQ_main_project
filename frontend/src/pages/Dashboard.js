@@ -34,11 +34,11 @@ const Dashboard = () => {
         <div className="analytics-grid">
           <div className="analytics-tile">
             <span>📚 Published FAQs</span>
-            <strong>{stats.approvedFAQs || 0}</strong>
+            <strong>{stats.approved || 0}</strong>
           </div>
           <div className="analytics-tile">
             <span>⏳ Pending Reviews</span>
-            <strong>{stats.pendingFAQs || 0}</strong>
+            <strong>{stats.pending || 0}</strong>
           </div>
           <div className="analytics-tile">
             <span>🤖 AI Messages Left</span>

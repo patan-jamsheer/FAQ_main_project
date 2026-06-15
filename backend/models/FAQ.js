@@ -34,6 +34,4 @@ faqSchema.index({ question: 'text', answer: 'text' });
 faqSchema.index({ isApproved: 1, createdAt: -1 });
 faqSchema.index({ createdById: 1, status: 1 });
 
-faqSchema.index({ question: 'text', answer: 'text' });
-
 module.exports = mongoose.model('FAQ', faqSchema);

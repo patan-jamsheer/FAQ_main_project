@@ -6,14 +6,20 @@ const config = require('../config/env');
 
 function todayKey() { return new Date().toISOString().slice(0, 10); }
 
-async function checkAndIncrementAIUsage(userId) {
+// Checks usage limit WITHOUT incrementing (pre-flight check)
+async function checkAIUsage(userId) {
+  const date = todayKey();
+  const usage = await ChatUsage.findOne({ userId, date });
+  const count = usage?.count || 0;
+  const allowed = count < config.aiDailyLimit;
+  return { allowed, count, remaining: Math.max(0, config.aiDailyLimit - count), limit: config.aiDailyLimit };
+}
+
+// Increments ONLY after success
+async function incrementAIUsage(userId) {
   const date = todayKey();
   const usage = await ChatUsage.findOneAndUpdate({ userId, date }, { $inc: { count: 1 } }, { upsert: true, new: true });
-  if (usage.count > config.aiDailyLimit) {
-    await ChatUsage.updateOne({ userId, date }, { $inc: { count: -1 } });
-    return { allowed: false, remaining: 0, limit: config.aiDailyLimit };
-  }
-  return { allowed: true, remaining: Math.max(0, config.aiDailyLimit - usage.count), limit: config.aiDailyLimit };
+  return { remaining: Math.max(0, config.aiDailyLimit - usage.count), limit: config.aiDailyLimit };
 }
 
 const getFaqs = async (req, res, next) => {
@@ -92,6 +98,7 @@ const reportFaq = async (req, res, next) => {
   try {
     const faq = await faqService.reportFaq(req.params.id, req.body.reason, req.user.name);
     if (!faq) return res.status(404).json({ message: 'FAQ not found' });
+    if (faq.alreadyReported) return res.status(409).json({ message: 'You have already reported this FAQ.' });
     res.json({ message: 'Report submitted.' });
   } catch (err) { next(err); }
 };
@@ -105,11 +112,16 @@ const chatWithAI = async (req, res, next) => {
     const { message, history } = req.body;
     if (!message?.trim()) return res.status(400).json({ message: 'Message is required' });
 
-    const usage = await checkAndIncrementAIUsage(String(req.user.id));
-    if (!usage.allowed) return res.status(429).json({ message: `Daily AI limit reached.`, remaining: 0, limit: usage.limit });
+    // 1. Pre-flight check — do NOT increment yet
+    const check = await checkAIUsage(String(req.user.id));
+    if (!check.allowed) return res.status(429).json({ message: 'Daily AI limit reached.', remaining: 0, limit: check.limit });
 
+    // 2. Call AI — if this throws, the counter is never incremented
     const aiResult = await aiService.generateResponse(message, history);
-    res.json({ text: aiResult.text, relatedFaqs: aiResult.relatedFaqs, remaining: usage.remaining, limit: usage.limit });
+
+    // 3. Only charge usage after a successful response
+    const updated = await incrementAIUsage(String(req.user.id));
+    res.json({ text: aiResult.text, relatedFaqs: aiResult.relatedFaqs, remaining: updated.remaining, limit: updated.limit });
   } catch (err) { next(err); }
 };
 
@@ -130,7 +142,12 @@ const upvoteFaq = async (req, res, next) => {
 };
 
 const editFaq = async (req, res, next) => {
-  try { res.json(await faqService.editFaq(req.params.id, req.body)); } catch (err) { next(err); }
+  try {
+    if (!req.body.question?.trim()) return res.status(400).json({ message: 'Question is required and cannot be empty.' });
+    const faq = await faqService.editFaq(req.params.id, req.body);
+    if (!faq) return res.status(404).json({ message: 'FAQ not found' });
+    res.json(faq);
+  } catch (err) { next(err); }
 };
 
 const deleteFaq = async (req, res, next) => {

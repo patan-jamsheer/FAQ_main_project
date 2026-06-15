@@ -113,6 +113,9 @@ const rejectFaq = async (id, reason) => {
 const reportFaq = async (id, reason, reportedBy) => {
   const faq = await FAQ.findById(id);
   if (!faq) return null;
+  // Prevent duplicate reports from the same user
+  const alreadyReported = faq.reports.some(r => r.reportedBy === reportedBy);
+  if (alreadyReported) return { alreadyReported: true };
   faq.reports.push({ reason: (reason || 'Incorrect or unhelpful').trim(), reportedBy });
   return await faq.save();
 };
@@ -127,7 +130,11 @@ const upvoteFaq = async (id, userId) => {
   return await faq.save();
 };
 
-const editFaq = async (id, data) => FAQ.findByIdAndUpdate(id, { question: data.question, answer: data.answer }, { new: true });
+const editFaq = async (id, data) => FAQ.findByIdAndUpdate(
+  id,
+  { question: data.question.trim(), answer: (data.answer || '').trim() },
+  { new: true, runValidators: true }
+);
 const deleteFaq = async (id) => FAQ.findByIdAndDelete(id);
 
 module.exports = {
